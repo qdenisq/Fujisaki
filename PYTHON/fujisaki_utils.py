@@ -101,7 +101,7 @@ def generate_fujisaki_curve(show = True, verbose = False, time = 5.0, fs = 20000
         plt.plot(x, y_b, linestyle='--', label='base comp')
         plt.plot(x, Cp_sum, linestyle='--', label='phrase comp')
         plt.plot(x, Ca_sum, linestyle='--', label='accent comp')
-        plt.legend()
+        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         plt.show()
     return x, y
 
