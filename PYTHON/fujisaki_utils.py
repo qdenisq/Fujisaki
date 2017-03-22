@@ -50,7 +50,7 @@ def generate_fujisaki_params(min_Fb = 20, max_Fb = 500, min_a = 0.0, max_a = 10.
     return p
 
 
-def generate_fujisaki_curve(show = True, verbose = False, time = 5.0, fs = 20000, **kwargs):
+def generate_fujisaki_curve(**kwargs):
     # Parse params
     p = kwargs
     show = p.get('show', True)
@@ -74,9 +74,9 @@ def generate_fujisaki_curve(show = True, verbose = False, time = 5.0, fs = 20000
     num_samples = int(time*fs)
     x = np.linspace(0, time, num_samples)
     # Scale timings
-    T0p = T0p*time
-    T1a = T1a*time
-    T2a = T2a*time
+    T0p = [ti*time for ti in T0p]
+    T1a = [ti*time for ti in T1a]
+    T2a = [ti*time for ti in T2a]
 
     # Base frequency component
     y_b = [np.log(Fb)]*num_samples
@@ -90,20 +90,24 @@ def generate_fujisaki_curve(show = True, verbose = False, time = 5.0, fs = 20000
 
     y = [sum(comp) for comp in zip(y_b, Ca_sum, Cp_sum)]
 
-    if verbose:
+    if verbose == True:
         print sum(Cp_sum)
         print len(Cp_sum)
         print sum(Ca_sum)
         print len(Ca_sum)
 
-    if show:
+    if show == True:
         plt.plot(x, y, linewidth=2.0, label='output')
         plt.plot(x, y_b, linestyle='--', label='base comp')
         plt.plot(x, Cp_sum, linestyle='--', label='phrase comp')
         plt.plot(x, Ca_sum, linestyle='--', label='accent comp')
         plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         plt.show()
-    return x, y
+    return {'x': x,
+            'y': y,
+            'Ca': Ca,
+            'Cp': Cp,
+            'y_b': y_b}
 
 
 def save_obj(obj, name):

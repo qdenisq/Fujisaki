@@ -41,7 +41,7 @@ def calc_Gp(a, t):
 def calc_Ga(b, y, t_input):
     res = [min(y, 1.0 - (1.0 + b * t) * np.exp(-b * t)) for t in t_input]
     for i in range(len(res)):
-        if res[i] < 0:
+        if t_input[i] < 0:
             res[i] = 0
     return res
 
