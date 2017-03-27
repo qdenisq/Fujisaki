@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import utils
 import shlex
 import subprocess, os, sys, getopt
-
+import multiprocessing
+from joblib import Parallel, delayed
 def generate_fujisaki_params(min_Fb = 20, max_Fb = 500, min_a = 0.0, max_a = 10.0,min_b = 0.0, max_b = 40.0,min_I = 1, max_I = 10, min_J = 1, max_J = 10, verbose = True):
 
     Fb = np.random.random()*max_Fb
@@ -115,6 +116,7 @@ def generate_fujisaki_curve(**kwargs):
 
 
 def convert_wav_to_f0_ascii(fname, directory=''):
+    print 'convert ', fname
     # Create the signal object.
     signal = basic.SignalObj(fname)
     # Get time interval and num_samples
@@ -136,21 +138,39 @@ def convert_wav_to_f0_ascii(fname, directory=''):
 
 
 def convert_f0_ascii_to_pac(fname, autofuji_fname, directory=''):
+    if sys.platform.startswith('win'):
+        import ctypes
+        SEM_NOGPFAULTERRORBOX = 0x0002
+        ctypes.windll.kernel32.SetErrorMode(SEM_NOGPFAULTERRORBOX)
+        import win32con
+
+        subprocess_flags = win32con.CREATE_NO_WINDOW
+    else:
+        subprocess_flags = 0
+
+    print 'convert ', fname
     thresh = 0.0001
     min_delta = 100.0
     best_alpha = 1.0
     # Call autofuji.exe for every alpha and check for the min delta
     for alpha in np.linspace(1.0, 3.0, 20):
-        args = "{} 0 4 {} auto {}".format(directory + fname, thresh, alpha)
+        args = "\"{}\" 0 4 {} auto {}".format(directory + fname, thresh, alpha)
         list_args = shlex.split(autofuji_fname + " " + args)
-        output = subprocess.check_output(list_args)
+        output = ''
+        try:
+            output = subprocess.check_output(list_args, creationflags=subprocess_flags)
+        except subprocess.CalledProcessError:
+            return
         delta_str = output.splitlines()[-1]
         delta = float(delta_str.split()[-1])
         if delta < min_delta:
             min_delta = delta
             best_alpha = alpha
-    args = "{} 0 4 {} auto {}".format(directory + fname, thresh, best_alpha)
-    subprocess.call(autofuji_fname + " " + args)
+    args = "\"{}\" 0 4 {} auto {}".format(directory + fname, thresh, best_alpha)
+    try:
+        subprocess.call(autofuji_fname + " " + args, stdout=open(os.devnull, 'w'))
+    except subprocess.CalledProcessError:
+        pass
 
 
 def parse_pac_file(fname):
@@ -182,9 +202,9 @@ def parse_pac_file(fname):
 
 def main(argv):
 
-    directory = r'C:/Users/s3628075/Study/Fujisaki/DataBase/'
+    directory = r'D:\Emotional Databases\IEMOCAP\IEMOCAP_full_release\Session1\sentences\wav\Ses01F_script01_1/'
     autofuji_fname = r'C:/Users/s3628075/Study/Fujisaki_estimator/Autofuji.exe'
-    key = 0
+    key = 2
 
     try:
         opts, args = getopt.getopt(argv,"hd:k:",["directory=","key="])
@@ -204,15 +224,21 @@ def main(argv):
             directory = arg
         elif opt in ("-k", "--key"):
             key = int(arg)
+    directory = directory.replace('\\', '/')
+    if not directory.endswith('/'):
+        directory += '/'
     print 'Working directory is ', directory
     print 'Key is', key
+
     if key == 0 or key == 1:
         print '//////////////////////////////////////////////////////////\n' \
               'Convert wav files to f0_ascii in', directory
         wav_fnames = utils.get_file_list(directory)
-        for fname in wav_fnames:
-            print 'convert ', fname
-            convert_wav_to_f0_ascii(directory+fname, directory)
+        Parallel(n_jobs=multiprocessing.cpu_count(), backend='threading', verbose=5)(
+            delayed(convert_wav_to_f0_ascii)(directory+fname, directory) for fname in wav_fnames)
+        # for fname in wav_fnames:
+        #     print 'convert ', fname
+        #     convert_wav_to_f0_ascii(directory+fname, directory)
         print 'Conversion wav files to f0_ascii finished'
 
     if key == 0 or key == 2:
@@ -220,8 +246,12 @@ def main(argv):
               'Convert f0_ascii to PAC in', directory
 
         f0_fnames = utils.get_file_list(directory, '.f0_ascii')
-        for fname in f0_fnames:
-            convert_f0_ascii_to_pac(fname, autofuji_fname, directory)
+        Parallel(n_jobs=multiprocessing.cpu_count(), backend='threading', verbose=20)(
+            delayed(convert_f0_ascii_to_pac)(fname, autofuji_fname, directory) for fname in f0_fnames)
+        # for fname in f0_fnames:
+        #
+        #     print 'convert ', fname
+        #     convert_f0_ascii_to_pac(fname, autofuji_fname, directory)
         print 'Conversion f0_ascii to PAC finished'
 
     if key == 0 or key == 3:
@@ -231,6 +261,7 @@ def main(argv):
         p_all = {}
         with open(directory+'Report.rep', 'w') as f:
             for fname in pac_fnames:
+                print 'convert ', fname
                 params = parse_pac_file(directory+fname)
                 f.write('{} {}\n'.format(fname, params))
                 p_all[fname] = params

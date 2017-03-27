@@ -15,7 +15,7 @@ import os
 import ctypes, sys
 import win32com.shell.shell as shell
 
-directory = 'C:\\Users\\s3628075\\Study\\Fujisaki\\DataBase\\'
+directory = r'D:\Emotional Databases\IEMOCAP\IEMOCAP_full_release\Session1\sentences\wav\Ses01F_script01_1'
 autofuji_fname = r'C:\Users\s3628075\Study\Fujisaki\DataBase\Autofuji.exe'
 
 wav_fnames = utils.get_file_list(directory)
