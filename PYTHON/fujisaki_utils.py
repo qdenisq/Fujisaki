@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import utils
 import shlex
 import subprocess, os, sys, getopt
+import subprocess32
 import multiprocessing
 from joblib import Parallel, delayed
 def generate_fujisaki_params(min_Fb = 20, max_Fb = 500, min_a = 0.0, max_a = 10.0,min_b = 0.0, max_b = 40.0,min_I = 1, max_I = 10, min_J = 1, max_J = 10, verbose = True):
@@ -115,6 +116,12 @@ def generate_fujisaki_curve(**kwargs):
             'y_b': y_b}
 
 
+def convert_avi_to_wav(fname, directory=''):
+    print 'convert ', fname
+    command = "ffmpeg.exe -i \"{}\" -ab 160k -ac 2 -ar 44100 -vn \"{}\"".format(fname, os.path.splitext(fname)[0]+".wav")
+    subprocess.call(command, shell=True)
+
+
 def convert_wav_to_f0_ascii(fname, directory=''):
     print 'convert ', fname
     # Create the signal object.
@@ -141,7 +148,7 @@ def convert_f0_ascii_to_pac(fname, autofuji_fname, directory=''):
     if sys.platform.startswith('win'):
         import ctypes
         SEM_NOGPFAULTERRORBOX = 0x0002
-        ctypes.windll.kernel32.SetErrorMode(SEM_NOGPFAULTERRORBOX)
+        # ctypes.windll.kernel32.SetErrorMode(SEM_NOGPFAULTERRORBOX)
         import win32con
 
         subprocess_flags = win32con.CREATE_NO_WINDOW
@@ -158,19 +165,24 @@ def convert_f0_ascii_to_pac(fname, autofuji_fname, directory=''):
         list_args = shlex.split(autofuji_fname + " " + args)
         output = ''
         try:
-            output = subprocess.check_output(list_args, creationflags=subprocess_flags)
-        except subprocess.CalledProcessError:
+            output = subprocess32.check_output(list_args, timeout=5.0)
+            delta_str = output.splitlines()[-1]
+            delta = float(delta_str.split()[-1])
+        except Exception as e:
+            if os.path.exists(os.path.splitext(directory + fname)[0]+'.PAC'):
+                os.remove(os.path.splitext(directory + fname)[0]+'.PAC')
+            print e.message
             return
-        delta_str = output.splitlines()[-1]
-        delta = float(delta_str.split()[-1])
         if delta < min_delta:
             min_delta = delta
             best_alpha = alpha
     args = "\"{}\" 0 4 {} auto {}".format(directory + fname, thresh, best_alpha)
     try:
-        subprocess.call(autofuji_fname + " " + args, stdout=open(os.devnull, 'w'))
-    except subprocess.CalledProcessError:
-        pass
+        subprocess32.call(autofuji_fname + " " + args, shell=True, stdout=open(os.devnull, 'w'), timeout=5.0)
+    except Exception as e:
+        if os.path.exists(os.path.splitext(directory + fname)[0] + '.PAC'):
+            os.remove(os.path.splitext(directory + fname)[0] + '.PAC')
+
 
 
 def parse_pac_file(fname):
@@ -182,6 +194,7 @@ def parse_pac_file(fname):
         # Parse phrase components
         T0p = []
         Ap = []
+        a = 0.0
         for i in range(20, 20+I):
             t0p, _, ap, a = lines[i].split()
             T0p.append(float(t0p))
@@ -191,6 +204,7 @@ def parse_pac_file(fname):
         T1a = []
         T2a = []
         Aa = []
+        b = 0.0
         for i in range(20 + I, 20 + I + J):
             t1a, t2a, aa, b = lines[i].split()
             T1a.append(float(t1a))
@@ -202,8 +216,10 @@ def parse_pac_file(fname):
 
 def main(argv):
 
-    directory = r'D:\Emotional Databases\IEMOCAP\IEMOCAP_full_release\Session1\sentences\wav\Ses01F_script01_1/'
-    autofuji_fname = r'C:/Users/s3628075/Study/Fujisaki_estimator/Autofuji.exe'
+    # directory = r'D:\Emotional Databases\IEMOCAP\IEMOCAP_full_release\Session1\sentences\wav\Ses01F_script01_1/'
+    directory = r'C:/Users/s3628075/Study/Fujisaki/DataBase/enterface/All/'
+    # directory = r'C:/Users/s3628075/Study/Fujisaki/DataBase/Ses01F_script01_1'
+    autofuji_fname = r'C:/Users/s3628075/Study/Fujisaki_estimator/AutoFuji.exe'
     key = 2
 
     try:
@@ -231,9 +247,19 @@ def main(argv):
     print 'Key is', key
 
     if key == 0 or key == 1:
+        # print '//////////////////////////////////////////////////////////\n' \
+        #       'Convert avi files to wav in', directory
+        # avi_fnames = utils.get_file_list(directory, '.avi')
+        # Parallel(n_jobs=multiprocessing.cpu_count(), backend='threading', verbose=5)(
+        #     delayed(convert_avi_to_wav)(directory + fname, directory) for fname in avi_fnames)
+        # # for fname in wav_fnames:
+        # #     print 'convert ', fname
+        # #     convert_wav_to_f0_ascii(directory+fname, directory)
+        # print 'Conversion avi files to wav finished'
+
         print '//////////////////////////////////////////////////////////\n' \
               'Convert wav files to f0_ascii in', directory
-        wav_fnames = utils.get_file_list(directory)
+        wav_fnames = utils.get_file_list(directory, '.wav')
         Parallel(n_jobs=multiprocessing.cpu_count(), backend='threading', verbose=5)(
             delayed(convert_wav_to_f0_ascii)(directory+fname, directory) for fname in wav_fnames)
         # for fname in wav_fnames:
@@ -249,9 +275,8 @@ def main(argv):
         Parallel(n_jobs=multiprocessing.cpu_count(), backend='threading', verbose=20)(
             delayed(convert_f0_ascii_to_pac)(fname, autofuji_fname, directory) for fname in f0_fnames)
         # for fname in f0_fnames:
-        #
         #     print 'convert ', fname
-        #     convert_f0_ascii_to_pac(fname, autofuji_fname, directory)
+            # convert_f0_ascii_to_pac(fname, autofuji_fname, directory)
         print 'Conversion f0_ascii to PAC finished'
 
     if key == 0 or key == 3:

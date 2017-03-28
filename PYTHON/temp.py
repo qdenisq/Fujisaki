@@ -15,30 +15,31 @@ import os
 import ctypes, sys
 import win32com.shell.shell as shell
 
-directory = r'D:\Emotional Databases\IEMOCAP\IEMOCAP_full_release\Session1\sentences\wav\Ses01F_script01_1'
-autofuji_fname = r'C:\Users\s3628075\Study\Fujisaki\DataBase\Autofuji.exe'
+directory = r'C:/Users/s3628075/Study/Fujisaki/DataBase/'
+autofuji_fname = r'C:/Users/s3628075/Study/Fujisaki_estimator/AutoFuji.exe'
 
 wav_fnames = utils.get_file_list(directory)
 for fname in wav_fnames:
-    fuj_utils.convert_wav_to_f0_ascii(fname, directory)
+    pass  # fuj_utils.convert_wav_to_f0_ascii(directory+fname, directory)
 
 print("wav_to_f0 completed")
 print("f0_to_pac started")
 f0_fnames = utils.get_file_list(directory, '.f0_ascii')
 with open(directory+'dump.txt','w') as dumpfile:
     for fname in f0_fnames:
-        thresh = 0.0001
-        alpha = 2.0
-        args ="{} 0 4 {} auto {}".format(directory+fname, thresh, alpha)
-        subprocess.call(autofuji_fname+" "+args, stdout=dumpfile)
+        fuj_utils.convert_f0_ascii_to_pac(fname, autofuji_fname, directory)
+        # thresh = 0.0001
+        # alpha = 2.0
+        # args ="{} 0 4 {} auto {}".format(directory+fname, thresh, alpha)
+        # subprocess.call(autofuji_fname+" "+args)
         print("{} f0_to_pac completed".format(fname))
 print("f0_to_pac completed")
 
 
 # Declare the variables.
-file_name = "m1nw0000pes_short.wav"
+file_name = "Ses01F_script01_1_M035.wav"
 # Create the signal object.
-signal = basic.SignalObj(file_name)
+signal = basic.SignalObj(directory+file_name)
 # Get time interval and num_samples
 t_start = 0.0
 num_samples = signal.size
@@ -47,7 +48,7 @@ t = np.linspace(t_start, t_end, num_samples)
 # Create the pitch object and calculate its attributes.
 pitch = pyaapt.yaapt(signal)
 
-with open('m1nw0000pes_short.f0_ascii', 'wb') as f:
+with open('Ses01F_script01_1_M035.f0_ascii', 'wb') as f:
     for i in range(pitch.nframes):
         f0 = pitch.samp_values[i]
         vu = 1.0 if pitch.vuv[i] else 0.0
