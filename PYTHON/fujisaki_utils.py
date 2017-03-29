@@ -110,23 +110,26 @@ def generate_fujisaki_curve(**kwargs):
             'y_b': y_b}
 
 
-def calc_fuj_error(f0, x, fuj_params):
+def calc_fuj_error(f0, f0_interp, x, fuj_params):
     num_samples = len(f0)
     fuj = generate_fujisaki_curve(t=x, y=0.9, **fuj_params)
     f0_fuj = fuj['output']
-    try:
-        rss = np.square(np.subtract(f0, f0_fuj))
-    except:
-        pass
-    mean_rss = sum(rss)/float(num_samples)
-    return {'rss': rss,
-            'mean_rss': mean_rss}
+    # rss = np.square(np.subtract(f0, f0_fuj))
+    # mean_rss = sum(rss)/float(num_samples)
+    rss_interp = np.square(np.subtract(f0_interp, f0_fuj))
+    mean_rss_interp = sum(rss_interp)/float(num_samples)
+    return {'rss_interp': rss_interp,
+            'mean_rss_interp': mean_rss_interp}
 
 
-def analyze(report):
+def analyze(report, verbose=False):
     subjects = {}
     emotions = {}
+    i = 0
     for key, value in report.iteritems():
+        i+=1
+        if verbose:
+            print "{}: {} is being analyzed ".format(i, key)
         # Parse filename and find emotion category, subject
         name_splitted = key.split('_')
         try:
@@ -136,21 +139,23 @@ def analyze(report):
             print key, e.message
             continue
         f0_contour = value['f0']
+        f0_contour_interp = value['f0_interp']
         fs = value['fs']
         time_end = value['num']/fs
-        num_samples = len(f0_contour)
+        num_samples = len(f0_contour_interp)
         x = np.linspace(0.0, time_end, num_samples)
-        err = calc_fuj_error(f0_contour, x, value)
+        err = calc_fuj_error(f0_contour, f0_contour_interp, x, value)
 
         if s not in subjects:
-            subjects[s] = [err['mean_rss']]
+            subjects[s] = [err['mean_rss_interp']]
         else:
-            subjects[s].append(err['mean_rss'])
+            subjects[s].append(err['mean_rss_interp'])
 
         if e not in emotions:
             emotions[e] = []
-        emotions[e].append(err['mean_rss'])
+        emotions[e].append(err['mean_rss_interp'])
     return subjects, emotions
+
 
 def convert_avi_to_wav(fname, directory=''):
     print 'convert ', fname
@@ -336,6 +341,7 @@ def main(argv):
                 params['fs'] = signal.fs
                 params['num'] = signal.size
                 params['f0'] = pitch.samp_values
+                params['f0_interp'] = np.log(pitch.values_interp)
 
                 p_all[fname] = params
         utils.save_obj(p_all, 'Report', directory)
@@ -345,7 +351,9 @@ def main(argv):
         print '/////////////////////////////////////////////////////////\n' \
               'Analyze report in ', directory
         report = utils.load_obj(directory+'Report.pkl')
-        analyze(report)
+        subj, emot = analyze(report, True)
+        utils.save_obj(subj, 'Subjects')
+        utils.save_obj(emot, 'Emotions')
         fnames, params = zip(*report.items())
         fnames = np.array(fnames)
         print len(report)
