@@ -9,6 +9,8 @@ import subprocess, os, sys, getopt
 import subprocess32
 import multiprocessing
 from joblib import Parallel, delayed
+
+
 def generate_fujisaki_params(min_Fb = 20, max_Fb = 500, min_a = 0.0, max_a = 10.0,min_b = 0.0, max_b = 40.0,min_I = 1, max_I = 10, min_J = 1, max_J = 10, verbose = True):
 
     Fb = np.random.random()*max_Fb
@@ -59,10 +61,9 @@ def generate_fujisaki_params(min_Fb = 20, max_Fb = 500, min_a = 0.0, max_a = 10.
 def generate_fujisaki_curve(**kwargs):
     # Parse params
     p = kwargs
-    show = p.get('show', True)
+    show = p.get('show', False)
     verbose = p.get('verbose', False)
-    time = p.get('time', 5.0)
-    fs = p.get('fs', 20000)
+    x = p['t']
 
     Fb = p['Fb']
     a = p['a']
@@ -76,16 +77,9 @@ def generate_fujisaki_curve(**kwargs):
     T1a = p['T1a']
     T2a = p['T2a']
 
-    # Create time array
-    num_samples = int(time*fs)
-    x = np.linspace(0, time, num_samples)
-    # Scale timings
-    T0p = [ti*time for ti in T0p]
-    T1a = [ti*time for ti in T1a]
-    T2a = [ti*time for ti in T2a]
-
+    num_samples = len(x)
     # Base frequency component
-    y_b = [np.log(Fb)]*num_samples
+    y_b = [np.log(Fb)]*len(x)
     # Phrase command components
     Cp = [Ap[i]*fm.calc_Gp(a, x - T0p[i]) for i in range(I)]
     # Accent command components
@@ -94,7 +88,7 @@ def generate_fujisaki_curve(**kwargs):
     Cp_sum = [sum(cp) for cp in zip(*Cp)] if I != 0 else [0.0]*num_samples
     Ca_sum = [sum(ca) for ca in zip(*Ca)] if J != 0 else [0.0]*num_samples
 
-    y = [sum(comp) for comp in zip(y_b, Ca_sum, Cp_sum)]
+    output = [sum(comp) for comp in zip(y_b, Ca_sum, Cp_sum)]
 
     if verbose == True:
         print sum(Cp_sum)
@@ -110,11 +104,53 @@ def generate_fujisaki_curve(**kwargs):
         plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         plt.show()
     return {'x': x,
-            'y': y,
+            'output': output,
             'Ca': Ca,
             'Cp': Cp,
             'y_b': y_b}
 
+
+def calc_fuj_error(f0, x, fuj_params):
+    num_samples = len(f0)
+    fuj = generate_fujisaki_curve(t=x, y=0.9, **fuj_params)
+    f0_fuj = fuj['output']
+    try:
+        rss = np.square(np.subtract(f0, f0_fuj))
+    except:
+        pass
+    mean_rss = sum(rss)/float(num_samples)
+    return {'rss': rss,
+            'mean_rss': mean_rss}
+
+
+def analyze(report):
+    subjects = {}
+    emotions = {}
+    for key, value in report.iteritems():
+        # Parse filename and find emotion category, subject
+        name_splitted = key.split('_')
+        try:
+            s = int(name_splitted[0][1:])
+            e = name_splitted[1]
+        except ValueError as e:
+            print key, e.message
+            continue
+        f0_contour = value['f0']
+        fs = value['fs']
+        time_end = value['num']/fs
+        num_samples = len(f0_contour)
+        x = np.linspace(0.0, time_end, num_samples)
+        err = calc_fuj_error(f0_contour, x, value)
+
+        if s not in subjects:
+            subjects[s] = [err['mean_rss']]
+        else:
+            subjects[s].append(err['mean_rss'])
+
+        if e not in emotions:
+            emotions[e] = []
+        emotions[e].append(err['mean_rss'])
+    return subjects, emotions
 
 def convert_avi_to_wav(fname, directory=''):
     print 'convert ', fname
@@ -184,34 +220,37 @@ def convert_f0_ascii_to_pac(fname, autofuji_fname, directory=''):
             os.remove(os.path.splitext(directory + fname)[0] + '.PAC')
 
 
-
 def parse_pac_file(fname):
     with open(fname, 'r') as f:
-        lines = f.readlines()
-        I = int(lines[7])
-        J = int(lines[8])
-        Fb = float(lines[9])
-        # Parse phrase components
-        T0p = []
-        Ap = []
-        a = 0.0
-        for i in range(20, 20+I):
-            t0p, _, ap, a = lines[i].split()
-            T0p.append(float(t0p))
-            Ap.append(float(ap))
+        try:
+            lines = f.readlines()
+            I = int(lines[7])
+            J = int(lines[8])
+            Fb = float(lines[9])
+            # Parse phrase components
+            T0p = []
+            Ap = []
+            a = 0.0
+            for i in range(20, 20+I):
+                t0p, _, ap, a = lines[i].split()
+                T0p.append(float(t0p))
+                Ap.append(float(ap))
 
-        # Parse accent components
-        T1a = []
-        T2a = []
-        Aa = []
-        b = 0.0
-        for i in range(20 + I, 20 + I + J):
-            t1a, t2a, aa, b = lines[i].split()
-            T1a.append(float(t1a))
-            T2a.append(float(t2a))
-            Aa.append(float(aa))
+            # Parse accent components
+            T1a = []
+            T2a = []
+            Aa = []
+            b = 0.0
+            for i in range(20 + I, 20 + I + J):
+                t1a, t2a, aa, b = lines[i].split()
+                T1a.append(float(t1a))
+                T2a.append(float(t2a))
+                Aa.append(float(aa))
 
-        return {'Fb': Fb, 'a': a, 'b': b, 'I': I, 'J': J, 'Ap': Ap, 'T0p': T0p, 'Aa': Aa, 'T1a': T1a, 'T2a': T2a}
+            return {'Fb': Fb, 'a': float(a), 'b': float(b), 'I': I, 'J': J, 'Ap': Ap, 'T0p': T0p, 'Aa': Aa, 'T1a': T1a, 'T2a': T2a}
+        except Exception as e:
+            print e
+            return
 
 
 def main(argv):
@@ -220,7 +259,7 @@ def main(argv):
     directory = r'C:/Users/s3628075/Study/Fujisaki/DataBase/enterface/All/'
     # directory = r'C:/Users/s3628075/Study/Fujisaki/DataBase/Ses01F_script01_1'
     autofuji_fname = r'C:/Users/s3628075/Study/Fujisaki_estimator/AutoFuji.exe'
-    key = 2
+    key = 4
 
     try:
         opts, args = getopt.getopt(argv,"hd:k:",["directory=","key="])
@@ -288,11 +327,48 @@ def main(argv):
             for fname in pac_fnames:
                 print 'convert ', fname
                 params = parse_pac_file(directory+fname)
+                if params == None:
+                    continue
                 f.write('{} {}\n'.format(fname, params))
+                # include original f0 signal, fs, and num_samples to params
+                signal = basic.SignalObj(directory + os.path.splitext(fname)[0] + '.wav')
+                pitch = pyaapt.yaapt(signal)
+                params['fs'] = signal.fs
+                params['num'] = signal.size
+                params['f0'] = pitch.samp_values
+
                 p_all[fname] = params
         utils.save_obj(p_all, 'Report', directory)
         print 'Report.rep created in ', directory
 
+    if key == 0 or key == 4:
+        print '/////////////////////////////////////////////////////////\n' \
+              'Analyze report in ', directory
+        report = utils.load_obj(directory+'Report.pkl')
+        analyze(report)
+        fnames, params = zip(*report.items())
+        fnames = np.array(fnames)
+        print len(report)
+        a = np.empty(1)
+        b = np.empty(1)
+        I = np.empty(1)
+        J = np.empty(1)
+        Fb =np.empty(1)
+        Aa = np.empty(2)
+
+        print len(params)
+        for p in params:
+            Fb= np.append(Fb, p['Fb'])
+            a = np.append(a, p['a'])
+            b = np.append(b, p['b'])
+            I = np.append(I, p['I'])
+            J = np.append(J, p['J'])
+            Aa = np.append(Aa, p['Aa'], axis=2)
+
+        from matplotlib import pyplot as plt
+        binwidth = 10.0
+        plt.hist(Fb, bins=np.arange(min(Fb), max(Fb) + binwidth, binwidth))
+        plt.show()
     print '//////////////////////////////////////////////////////////\n' \
           '/////////////////////// Finish ///////////////////////////\n' \
           '//////////////////////////////////////////////////////////'
