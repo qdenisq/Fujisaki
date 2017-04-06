@@ -9,7 +9,7 @@ import subprocess, os, sys, getopt
 import subprocess32
 import multiprocessing
 from joblib import Parallel, delayed
-
+import time
 
 def generate_fujisaki_params(min_Fb = 20, max_Fb = 500, min_a = 0.0, max_a = 10.0,min_b = 0.0, max_b = 40.0,min_I = 1, max_I = 10, min_J = 1, max_J = 10, verbose = True):
 
@@ -111,7 +111,7 @@ def generate_fujisaki_curve(**kwargs):
 
 
 def calc_fuj_error(f0, f0_interp, x, fuj_params):
-    num_samples = len(f0)
+    num_samples = len(f0_interp)
     fuj = generate_fujisaki_curve(t=x, y=0.9, **fuj_params)
     f0_fuj = fuj['output']
     # rss = np.square(np.subtract(f0, f0_fuj))
@@ -122,38 +122,38 @@ def calc_fuj_error(f0, f0_interp, x, fuj_params):
             'mean_rss_interp': mean_rss_interp}
 
 
-def analyze(report, verbose=False):
+def analyze(fuj_params, rmse, verbose=False):
     subjects = {}
     emotions = {}
     i = 0
-    for key, value in report.iteritems():
-        i+=1
+    em_keys = ['sa', 'su', 'an', 'fe', 'di', 'ha']
+    s_keys = np.linspace(1, 44, 44)
+    subj_keys = ['s'+str(s) for s in s_keys]
+    for key, value in rmse.iteritems():
+        i += 1
         if verbose:
-            print "{}: {} is being analyzed ".format(i, key)
+            print "{} of {}: {} is being analyzed ".format(i, len(rmse), key)
         # Parse filename and find emotion category, subject
-        name_splitted = key.split('_')
         try:
-            s = int(name_splitted[0][1:])
-            e = name_splitted[1]
+            s = ''
+            for subj in subj_keys:
+                if subj in key:
+                    s = subj
+            e = ''
+            for em in em_keys:
+                if em in key:
+                    e = em
         except ValueError as e:
             print key, e.message
             continue
-        f0_contour = value['f0']
-        f0_contour_interp = value['f0_interp']
-        fs = value['fs']
-        time_end = value['num']/fs
-        num_samples = len(f0_contour_interp)
-        x = np.linspace(0.0, time_end, num_samples)
-        err = calc_fuj_error(f0_contour, f0_contour_interp, x, value)
-
-        if s not in subjects:
-            subjects[s] = [err['mean_rss_interp']]
-        else:
-            subjects[s].append(err['mean_rss_interp'])
-
-        if e not in emotions:
-            emotions[e] = []
-        emotions[e].append(err['mean_rss_interp'])
+        if s != '':
+            if s not in subjects:
+                subjects[s] = []
+            subjects[s].append(value)
+        if e != '':
+            if e not in emotions:
+                emotions[e] = []
+            emotions[e].append(value)
     return subjects, emotions
 
 
@@ -163,7 +163,7 @@ def convert_avi_to_wav(fname, directory=''):
     subprocess.call(command, shell=True)
 
 
-def convert_wav_to_f0_ascii(fname, directory=''):
+def convert_wav_to_f0_ascii(fname, fs, directory=''):
     print 'convert ', fname
     # Create the signal object.
     signal = basic.SignalObj(fname)
@@ -183,6 +183,9 @@ def convert_wav_to_f0_ascii(fname, directory=''):
             fe = pitch.energy[i] * pitch.mean_energy
             line = '{} {} {} {}\n'.format(f0, vu, fe, vu)
             f.write(line)
+    step = signal.fs / fs
+    output_f0 = pitch.values_interp[0:signal.size:step]
+    return (os.path.splitext(os.path.basename(fname))[0], output_f0)
 
 
 def convert_f0_ascii_to_pac(fname, autofuji_fname, directory=''):
@@ -206,7 +209,7 @@ def convert_f0_ascii_to_pac(fname, autofuji_fname, directory=''):
         list_args = shlex.split(autofuji_fname + " " + args)
         output = ''
         try:
-            output = subprocess32.check_output(list_args, timeout=5.0)
+            output = subprocess32.check_output(list_args, timeout=30.0)
             delta_str = output.splitlines()[-1]
             delta = float(delta_str.split()[-1])
         except Exception as e:
@@ -222,7 +225,7 @@ def convert_f0_ascii_to_pac(fname, autofuji_fname, directory=''):
         subprocess32.call(autofuji_fname + " " + args, shell=True, stdout=open(os.devnull, 'w'), timeout=5.0)
     except Exception as e:
         if os.path.exists(os.path.splitext(directory + fname)[0] + '.PAC'):
-            os.remove(os.path.splitext(directory + fname)[0] + '.PAC')
+           pass# os.remove(os.path.splitext(directory + fname)[0] + '.PAC')
 
 
 def parse_pac_file(fname):
@@ -261,10 +264,13 @@ def parse_pac_file(fname):
 def main(argv):
 
     # directory = r'D:\Emotional Databases\IEMOCAP\IEMOCAP_full_release\Session1\sentences\wav\Ses01F_script01_1/'
-    directory = r'C:/Users/s3628075/Study/Fujisaki/DataBase/enterface/All/'
+    # directory = r'C:\Users\s3628075\Study\Fujisaki\DataBase\BerlinDatabase\All'
+    # directory = r'C:\Users\s3628075\Study\Fujisaki\DataBase\PolishEmotionalSpeechDataAGH\EmotiveKorpus\All'
+    directory = r'C:\Users\s3628075\Study\Fujisaki\DataBase\enterface\All/'
     # directory = r'C:/Users/s3628075/Study/Fujisaki/DataBase/Ses01F_script01_1'
     autofuji_fname = r'C:/Users/s3628075/Study/Fujisaki_estimator/AutoFuji.exe'
-    key = 4
+    key = 0
+    fs = 1500
 
     try:
         opts, args = getopt.getopt(argv,"hd:k:",["directory=","key="])
@@ -284,12 +290,15 @@ def main(argv):
             directory = arg
         elif opt in ("-k", "--key"):
             key = int(arg)
+        elif opt == '-fs':
+            fs = arg
     directory = directory.replace('\\', '/')
     if not directory.endswith('/'):
         directory += '/'
     print 'Working directory is ', directory
     print 'Key is', key
 
+    start = time.time()
     if key == 0 or key == 1:
         # print '//////////////////////////////////////////////////////////\n' \
         #       'Convert avi files to wav in', directory
@@ -304,12 +313,14 @@ def main(argv):
         print '//////////////////////////////////////////////////////////\n' \
               'Convert wav files to f0_ascii in', directory
         wav_fnames = utils.get_file_list(directory, '.wav')
-        Parallel(n_jobs=multiprocessing.cpu_count(), backend='threading', verbose=5)(
-            delayed(convert_wav_to_f0_ascii)(directory+fname, directory) for fname in wav_fnames)
+        results = Parallel(n_jobs=multiprocessing.cpu_count(), backend='threading', verbose=5)(
+            delayed(convert_wav_to_f0_ascii)(directory+fname, fs, directory) for fname in wav_fnames)
+        f0_i = dict(results)
+        utils.save_obj(f0_i, 'F0_signal', directory)
         # for fname in wav_fnames:
         #     print 'convert ', fname
         #     convert_wav_to_f0_ascii(directory+fname, directory)
-        print 'Conversion wav files to f0_ascii finished'
+        print 'Conversion wav files to f0_ascii finished. Elapsed: ', time.time()-start
 
     if key == 0 or key == 2:
         print '//////////////////////////////////////////////////////////\n' \
@@ -321,62 +332,52 @@ def main(argv):
         # for fname in f0_fnames:
         #     print 'convert ', fname
             # convert_f0_ascii_to_pac(fname, autofuji_fname, directory)
-        print 'Conversion f0_ascii to PAC finished'
+        print 'Conversion f0_ascii to PAC finished. Elapsed: ', time.time()-start
 
     if key == 0 or key == 3:
         print '/////////////////////////////////////////////////////////\n' \
               'Create report for all .Pac files in ', directory
         pac_fnames = utils.get_file_list(directory, '.PAC')
         p_all = {}
+        utils.save_obj(p_all, 'Report', directory)
         with open(directory+'Report.rep', 'w') as f:
+            i = 0
+            f0_i = utils.load_obj(directory+'F0_signal.pkl')
+            f0_fuj = {}
+            rmse = {}
             for fname in pac_fnames:
-                print 'convert ', fname
+                i += 1
+                print '{} of {} : convert {}'.format(i, len(pac_fnames), fname)
                 params = parse_pac_file(directory+fname)
                 if params == None:
                     continue
                 f.write('{} {}\n'.format(fname, params))
-                # include original f0 signal, fs, and num_samples to params
-                signal = basic.SignalObj(directory + os.path.splitext(fname)[0] + '.wav')
-                pitch = pyaapt.yaapt(signal)
-                params['fs'] = signal.fs
-                params['num'] = signal.size
-                params['f0'] = pitch.samp_values
-                params['f0_interp'] = np.log(pitch.values_interp)
-
-                p_all[fname] = params
-        utils.save_obj(p_all, 'Report', directory)
-        print 'Report.rep created in ', directory
+                name_key = os.path.splitext(fname)[0]
+                f0_interp = np.log(f0_i[name_key])
+                t_end = len(f0_interp)/fs
+                x = np.linspace(start=0.0, stop=t_end, num=len(f0_interp))
+                f0_f = generate_fujisaki_curve(t=x, y=0.9, **params)
+                f0_fuj[name_key] = f0_f
+                rss_interp = np.square(np.subtract(f0_interp, f0_f['output']))
+                rmse[name_key] = sum(rss_interp) / float(len(f0_interp))
+                p_all[name_key] = params
+        print 'Saving Fujisaki_Params.pkl in ', directory
+        utils.save_obj(p_all, 'Fujisaki_Params', directory)
+        print 'Saving Fujisaki_Contour.pkl in ', directory
+        utils.save_obj(f0_fuj, 'Fujisaki_Contour', directory)
+        print 'Saving RMSE.pkl in ', directory
+        utils.save_obj(rmse, 'RMSE', directory)
+        print 'Report creating finished. Elapsed: ', time.time()-start
 
     if key == 0 or key == 4:
         print '/////////////////////////////////////////////////////////\n' \
               'Analyze report in ', directory
-        report = utils.load_obj(directory+'Report.pkl')
-        subj, emot = analyze(report, True)
-        utils.save_obj(subj, 'Subjects')
-        utils.save_obj(emot, 'Emotions')
-        fnames, params = zip(*report.items())
-        fnames = np.array(fnames)
-        print len(report)
-        a = np.empty(1)
-        b = np.empty(1)
-        I = np.empty(1)
-        J = np.empty(1)
-        Fb =np.empty(1)
-        Aa = np.empty(2)
-
-        print len(params)
-        for p in params:
-            Fb= np.append(Fb, p['Fb'])
-            a = np.append(a, p['a'])
-            b = np.append(b, p['b'])
-            I = np.append(I, p['I'])
-            J = np.append(J, p['J'])
-            Aa = np.append(Aa, p['Aa'], axis=2)
-
-        from matplotlib import pyplot as plt
-        binwidth = 10.0
-        plt.hist(Fb, bins=np.arange(min(Fb), max(Fb) + binwidth, binwidth))
-        plt.show()
+        fuj_params = utils.load_obj(directory+'Fujisaki_Params.pkl')
+        rmse = utils.load_obj(directory+'RMSE.pkl')
+        subj, emot = analyze(rmse=rmse, fuj_params=fuj_params, verbose=True)
+        utils.save_obj(subj, 'Subjects', directory)
+        utils.save_obj(emot, 'Emotions', directory)
+        print 'Analysis finished. Elapsed: ', time.time()-start
     print '//////////////////////////////////////////////////////////\n' \
           '/////////////////////// Finish ///////////////////////////\n' \
           '//////////////////////////////////////////////////////////'

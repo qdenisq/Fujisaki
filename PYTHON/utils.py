@@ -10,7 +10,7 @@ def save_obj(obj, name, directory=''):
     if not os.path.exists(directory):
         os.makedirs(directory)
     with open(directory+name+'.pkl', 'wb') as f:
-        pickle.dump(obj, f)
+        pickle.dump(obj, f, protocol=0)
 
 
 def load_obj(fname):
@@ -23,8 +23,8 @@ def get_file_list(directory, ext='.wav'):
 
 
 def plot_hist(a, title, binwidth, xlabel='', verbose=False):
-    plt.figure()
-    h = plt.hist(a, bins=np.arange(min(a), max(a) + binwidth, binwidth), normed=True)
+    plt.figure(figsize=(18,5))
+    h = plt.hist(a, bins=np.arange(min(a), max(a) + binwidth, binwidth), alpha=0.4, normed=True)
     plt.title(title)
     if xlabel == '':
         xlabel = title
