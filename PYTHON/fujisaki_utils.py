@@ -10,6 +10,7 @@ import subprocess32
 import multiprocessing
 from joblib import Parallel, delayed
 import time
+import pandas
 
 def generate_fujisaki_params(min_Fb = 20, max_Fb = 500, min_a = 0.0, max_a = 10.0,min_b = 0.0, max_b = 40.0,min_I = 1, max_I = 10, min_J = 1, max_J = 10, verbose = True):
 
@@ -261,6 +262,59 @@ def parse_pac_file(fname):
             return
 
 
+def transform_params(fuj_params, phrase_count=3, accent_count=12):
+    type = [('name', 'S10'), ('Fb', 'f'), ('a', 'f')]
+    for i in range(phrase_count):
+        type.append(('Ap{}'.format(i), 'f'))
+    for i in range(phrase_count):
+        type.append(('T0p{}'.format(i), 'f'))
+    for i in range(accent_count):
+        type.append(('Aa{}'.format(i), 'f'))
+    for i in range(accent_count):
+        type.append(('T1a{}'.format(i), 'f'))
+    for i in range(accent_count):
+        type.append(('T2a{}'.format(i), 'f'))
+
+    x = np.empty(len(fuj_params), dtype=np.dtype(type))
+    i = 0
+    for name, params in fuj_params.items():
+        # labels = 'name', 'Fb', 'a', 'Ap0', 'Ap1', 'Ap2', 'T0p0'..., '
+        record = [name]
+        fb = params['Fb']
+        a = params['a']
+
+        record.append(fb)
+        record.append(a)
+
+        Ap_list = params['Ap']
+        Ap_list.extend([None]*phrase_count)
+        Ap_list = Ap_list[:phrase_count]
+        record.extend(Ap_list)
+
+        T0p_list = params['T0p']
+        T0p_list.extend([None] * phrase_count)
+        T0p_list = T0p_list[:phrase_count]
+        record.extend(T0p_list)
+
+        Aa_list = params['Aa']
+        Aa_list.extend([None]*accent_count)
+        Aa_list = Aa_list[:accent_count]
+        record.extend(Aa_list)
+
+        T1a_list = params['T1a']
+        T1a_list.extend([None]*accent_count)
+        T1a_list = T1a_list[:accent_count]
+        record.extend(T1a_list)
+
+        T2a_list = params['T2a']
+        T2a_list.extend([None]*accent_count)
+        T2a_list = T2a_list[:accent_count]
+        record.extend(T2a_list)
+        x[i] = tuple(record)
+        i += 1
+    return x
+
+
 def main(argv):
 
     # directory = r'D:\Emotional Databases\IEMOCAP\IEMOCAP_full_release\Session1\sentences\wav\Ses01F_script01_1/'
@@ -339,7 +393,6 @@ def main(argv):
               'Create report for all .Pac files in ', directory
         pac_fnames = utils.get_file_list(directory, '.PAC')
         p_all = {}
-        utils.save_obj(p_all, 'Report', directory)
         with open(directory+'Report.rep', 'w') as f:
             i = 0
             f0_i = utils.load_obj(directory+'F0_signal.pkl')
